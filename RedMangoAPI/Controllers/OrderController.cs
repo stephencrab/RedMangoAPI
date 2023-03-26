@@ -8,6 +8,7 @@ using RedMangoAPI.Models;
 using RedMangoAPI.Models.Dto;
 using RedMangoAPI.Utility;
 using System.Net;
+using System.Text.Json;
 
 namespace RedMangoAPI.Controllers
 {
@@ -23,6 +24,55 @@ namespace RedMangoAPI.Controllers
             this._dbContext = dbContext;
             this._response = new ApiResponse();
             this._mapper = mapper;
+        }
+
+        [HttpGet]
+        public async Task<ActionResult<ApiResponse>> GetOrders(string? userId, string searchString,
+            string status, int pageNumber = 1, int pageSize = 5)
+        {
+            try
+            {
+                IEnumerable<OrderHeader> orderHeaders = _dbContext.OrderHeaders.Include(o => o.OrderDetails)
+                    .ThenInclude(o => o.MenuItem)
+                    .OrderByDescending(o => o.OrderHeaderId);
+
+                if (!string.IsNullOrEmpty(userId))
+                {
+                    orderHeaders = orderHeaders.Where(o => o.ApplicationUserId == userId);
+                }
+
+                if (!string.IsNullOrEmpty(searchString))
+                {
+                    orderHeaders = orderHeaders.Where(o => o.PickupName.ToUpper().Contains(searchString.ToUpper()) ||
+                    o.PickupEmail.ToUpper().Contains(searchString.ToUpper()) ||
+                    o.PickupPhoneNumber.ToUpper().Contains(searchString.ToUpper()));
+                }
+
+                if (!string.IsNullOrEmpty(status))
+                {
+                    orderHeaders = orderHeaders.Where(o => o.Status.ToUpper() == status.ToUpper());
+                }
+
+                Pagination pagination = new Pagination
+                {
+                    CurrentPage = pageNumber,
+                    PageSize = pageSize,
+                    TotalRecords = orderHeaders.Count(),
+                };
+
+                Response.Headers.Add("X-Pagination", JsonSerializer.Serialize(pagination));
+
+                _response.Result = orderHeaders.Skip((pageNumber - 1) * pageSize).Take(pageSize);
+                _response.StatusCode = HttpStatusCode.OK;
+                return Ok(_response);
+            }
+            catch (Exception ex)
+            {
+                _response.IsSuccess = false;
+                _response.ErrorMessages.Add(ex.Message);
+            }
+
+            return _response;
         }
 
         [HttpGet("{id:int}")]
